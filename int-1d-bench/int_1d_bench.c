@@ -10,7 +10,7 @@
 #define RANGE         100
 #define MAX_CHAR_PATH 4096
 
-#define USE_COMPOUND_TYPE
+//#define USE_COMPOUND_TYPE
 
 /* Borrowed from Francois Tessier */
 double PFS_Uncache (char *filename)
