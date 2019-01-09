@@ -10,6 +10,8 @@
 #define RANGE         100
 #define MAX_CHAR_PATH 4096
 
+#define USE_COMPOUND_TYPE
+
 /* Borrowed from Francois Tessier */
 double PFS_Uncache (char *filename)
 {
@@ -147,6 +149,7 @@ int main(int argc, char * argv[])
 	/* Use MPI datatype if write is discontiguous for each rank */
 	if (count > 1) {
 
+#ifdef USE_COMPOUND_TYPE
 		/* We may be writing many elements (possibly overflowing int indices).
 		 * Lets create a contiguous datatype for each block, and then create a
 		 * vector datatype on top of that.
@@ -160,6 +163,14 @@ int main(int argc, char * argv[])
 		/* Write the file */
 		MPI_File_set_view( fhw, (rank * block * sizeof(MPI_INT)), contigtype, vectortype, "native", info );
 		MPI_File_write_all( fhw, lrandarr, count, contigtype, &status );
+#else
+		MPI_Type_vector( count, block, (size * block), MPI_INT, &vectortype);
+		MPI_Type_commit( &vectortype);
+
+		/* Write the file */
+		MPI_File_set_view( fhw, (rank * block * sizeof(MPI_INT)), MPI_INT, vectortype, "native", info );
+		MPI_File_write_all( fhw, lrandarr, nel, MPI_INT, &status );
+#endif
 
 	} else {
 
@@ -204,11 +215,15 @@ int main(int argc, char * argv[])
 
 	/* Use MPI datatype if write is discontiguous for each rank */
 	if (count > 1) {
-
+#ifdef USE_COMPOUND_TYPE
 		/* Read the file */
 		MPI_File_set_view( fhr, (rank * block * sizeof(MPI_INT)), contigtype, vectortype, "native", info );
 		MPI_File_read_all( fhr, lrandarr_r, count, contigtype, &status );
-
+#else
+		/* Read the file */
+		MPI_File_set_view( fhr, (rank * block * sizeof(MPI_INT)), MPI_INT, vectortype, "native", info );
+		MPI_File_read_all( fhr, lrandarr_r, nel, MPI_INT, &status );
+#endif
 	} else {
 
 		/* Read the file */
