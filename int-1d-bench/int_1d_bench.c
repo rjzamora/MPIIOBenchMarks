@@ -55,7 +55,7 @@ int main(int argc, char * argv[])
 	char * outname  = "result.txt"; // name of file to record timing numbers
 	int * lrandarr;                 // pointer to data buffer to write
 	int * lrandarr_r;               // pointer to data buffer to read/check
-  int * offsets;                  // MPI-dataype offsets array
+	int * offsets;                  // MPI-dataype offsets array
 	long range, i;                  // variable integers (long)
 	int nel, block, count, uncache; // variable integers (int)
 	double tC, tR, tW, tS, tUC;     // timers
@@ -69,7 +69,7 @@ int main(int argc, char * argv[])
 	MPI_File fhr, fhw;
 	MPI_Status status;
 	MPI_Offset offset0;
-  MPI_Datatype indexedtype;
+	MPI_Datatype indexedtype;
 
 	/* Initialize MPI */
 	MPI_Init(&argc, &argv);
@@ -242,11 +242,11 @@ int main(int argc, char * argv[])
 	double write_bdwth_sync = MBs / (tW + tS);
 	double read_bdwth = MBs / tR;
 	if(rank==0) {
-		fprintf(fp,"\n1D Integer-Array MPI-IO Benchmark (block=%d, count=%d):\n", block, count);
-		fprintf(fp,  "WRITE(RAW):  SIZE[MB]= %f BDWTH[MB/s]= %f\n", MBs, write_bdwth);
-		fprintf(fp,  "WRITE(SYNC): SIZE[MB]= %f BDWTH[MB/s]= %f\n", MBs, write_bdwth_sync);
-		fprintf(fp,  "READ(RAW):   SIZE[MB]= %f BDWTH[MB/s]= %f\n", MBs, read_bdwth);
-		fprintf(fp,  "UNCACHING TIME[s]= %f\n", tUC);
+		fprintf(fp,"\n1D Integer-Array MPI-IO Benchmark (ranks=%d, block=%d, count=%d):\n", size, block, count);
+		fprintf(fp,  "WRITE(RAW):  SIZE[MB]= %f BDWTH[MB/s]= %f TIME[s]= %f\n", MBs, write_bdwth, tW);
+		fprintf(fp,  "WRITE(SYNC): SIZE[MB]= %f BDWTH[MB/s]= %f TIME[s]= %f\n", MBs, write_bdwth_sync, tW+tS);
+		fprintf(fp,  "READ(RAW):   SIZE[MB]= %f BDWTH[MB/s]= %f TIME[s]= %f\n", MBs, read_bdwth, tR);
+		fprintf(fp,  "UNCACHE:     TIME[s]= %f\n", tUC);
 		fclose(fp);
 	}
 	MPI_Barrier( MPI_COMM_WORLD );
