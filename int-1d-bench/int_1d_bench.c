@@ -177,7 +177,7 @@ int main(int argc, char * argv[])
 			for (i=0;i<count;i++) {
 				offsets[i] = i * (block * size) + (rank * block);
 			}
-			MPI_Type_create_indexed_block(count, 1, offsets, MPI_INT, &indexedtype);
+			MPI_Type_create_indexed_block(count, block, offsets, MPI_INT, &indexedtype);
 			MPI_Type_commit(&indexedtype);
 			MPI_File_set_view( fhw, 0, MPI_INT, indexedtype, "native", info );
 			MPI_File_write_all( fhw, lrandarr, nel, MPI_INT, &status );
