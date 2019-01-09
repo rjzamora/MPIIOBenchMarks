@@ -1,0 +1,3 @@
+CXX =
+CC = mpixlc
+MPI_CFLAGS = -g -O3
