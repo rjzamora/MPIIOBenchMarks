@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <mpi.h>
+#include <limits.h>
 
 #define MB            1048576
 #define SEED          12173
@@ -51,17 +52,17 @@ int main(int argc, char * argv[])
 {
 
 	/* Variable definitions */
-	char * filename = "file.mpio";  // name of file to write
-	char * funcache = "dummy.mpio"; // name of file to write for "unchaching"
-	char * outname  = "result.txt"; // name of file to record timing numbers
-	int * lrandarr;                 // pointer to data buffer to write
-	int * lrandarr_r;               // pointer to data buffer to read/check
-	int * offsets;                  // MPI-dataype offsets array
-	long range, i, block, nel;      // variable integers (long)
-	int count, uncache;             // variable integers (int)
-	double tC, tR, tW, tS, tUC;     // timers
-	int returnval = 0;              // return value
-	FILE *fp;                       // Output file for timing
+	char * filename = "file.mpio";     // name of file to write
+	char * funcache = "dummy.mpio";    // name of file to write for "unchaching"
+	char * outname  = "result.txt";    // name of file to record timing numbers
+	int * lrandarr;                    // pointer to data buffer to write
+	int * lrandarr_r;                  // pointer to data buffer to read/check
+	int * offsets;                     // MPI-dataype displacements array
+	long range, i, block, nel;         // variable integers (long)
+	int count, uncache;                // variable integers (int)
+	double tC, tR, tW, tS, tUC;        // timers
+	int returnval = 0;                 // return value
+	FILE *fp;                          // Output file for timing
 
 	/* MPI variables */
 	int rank, size;
@@ -71,6 +72,8 @@ int main(int argc, char * argv[])
 	MPI_Status status;
 	MPI_Offset offset0;
 	MPI_Datatype indexedtype;
+	MPI_Datatype contigtype;
+	MPI_Datatype structype;
 
 	/* Initialize MPI */
 	MPI_Init(&argc, &argv);
@@ -151,25 +154,47 @@ int main(int argc, char * argv[])
 	/* Use MPI datatype if write is discontiguous for each rank */
 	if (count > 1) {
 
-		/* Populate datatype-helper array */
-		for (i=0;i<count;i++) {
-			offsets[i] = i * (block * size) + (rank * block);
-		}
-
-		/* Create and commit the new datatype */
-		MPI_Type_create_indexed_block(count, block, offsets, MPI_INT, &indexedtype);
-		MPI_Type_commit(&indexedtype);
-
-		/* Set file view using the new datatype */
-		MPI_File_set_view(fhw, 0, MPI_INT, indexedtype, "native", info);
-
 		/* Write the file */
-		MPI_File_write_all( fhw, lrandarr, nel, MPI_INT, &status );
+		if (nel >= INT_MAX) {
+
+			/* We are writing many int elements, and might overflow int64_t. Lets
+			 * create a contiguous datatype for each block, and then create an
+			 * indexed datatype on top of that.
+			 */
+			MPI_Type_contiguous( block, MPI_INT, &contigtype );
+			MPI_Type_commit( &contigtype );
+			for (i=0;i<count;i++) {
+				offsets[i] = i * size + rank;
+			}
+			MPI_Type_create_indexed_block(count, 1, offsets, contigtype, &indexedtype);
+			MPI_Type_commit(&indexedtype);
+			MPI_File_set_view( fhw, 0, contigtype, indexedtype, "native", info );
+			MPI_File_write_all( fhw, lrandarr, count, contigtype, &status );
+
+		} else {
+
+			/* Create an indexed datatype to capture non-contiguous pattern */
+			for (i=0;i<count;i++) {
+				offsets[i] = i * (block * size) + (rank * block);
+			}
+			MPI_Type_create_indexed_block(count, 1, offsets, MPI_INT, &indexedtype);
+			MPI_Type_commit(&indexedtype);
+			MPI_File_set_view( fhw, 0, MPI_INT, indexedtype, "native", info );
+			MPI_File_write_all( fhw, lrandarr, nel, MPI_INT, &status );
+
+		}
 
 	} else {
 
 		/* Write the file */
-		MPI_File_write_at_all( fhw, offset0, lrandarr, nel, MPI_INT, &status );
+		if (nel >= INT_MAX) {
+			MPI_Type_contiguous(nel, MPI_INT, &contigtype);
+			MPI_Type_commit(&contigtype);
+			MPI_File_set_view( fhw, 0, MPI_INT, contigtype, "native", info );
+			MPI_File_write_at_all( fhw, offset0, lrandarr, 1, contigtype, &status );
+		} else {
+			MPI_File_write_at_all( fhw, offset0, lrandarr, nel, MPI_INT, &status );
+		}
 
 	}
 
@@ -207,25 +232,24 @@ int main(int argc, char * argv[])
 	/* Use MPI datatype if write is discontiguous for each rank */
 	if (count > 1) {
 
-		/* Populate datatype-helper array */
-		for (i=0;i<count;i++) {
-			offsets[i] = i * (block * size) + (rank * block);
+		/* Read the file */
+		if (nel >= INT_MAX) {
+			MPI_File_set_view( fhr, 0, contigtype, indexedtype, "native", info );
+			MPI_File_read_all( fhr, lrandarr_r, count, contigtype, &status );
+		} else {
+			MPI_File_set_view( fhr, 0, MPI_INT, indexedtype, "native", info );
+			MPI_File_read_all( fhr, lrandarr_r, nel, MPI_INT, &status );
 		}
-
-		/* Create and commit the new datatype */
-		MPI_Type_create_indexed_block(count, block, offsets, MPI_INT, &indexedtype);
-		MPI_Type_commit(&indexedtype);
-
-		/* Set file view using the new datatype */
-		MPI_File_set_view(fhr, 0, MPI_INT, indexedtype, "native", info);
-
-		/* Write the file */
-		MPI_File_read_all( fhr, lrandarr_r, nel, MPI_INT, &status );
 
 	} else {
 
-		/* Write the file */
-		MPI_File_read_at_all( fhr, offset0, lrandarr_r, nel, MPI_INT, &status );
+		/* Read the file */
+		if (nel >= INT_MAX) {
+			MPI_File_set_view( fhr, 0, MPI_INT, contigtype, "native", info );
+			MPI_File_read_at_all( fhr, offset0, lrandarr_r, 1, contigtype, &status );
+		} else {
+			MPI_File_read_at_all( fhr, offset0, lrandarr_r, nel, MPI_INT, &status );
+		}
 
 	}
 
@@ -264,6 +288,9 @@ int main(int argc, char * argv[])
 	/* Free arrays */
 	free(lrandarr);
 	free(lrandarr_r);
+	if (count > 1) {
+		free(offsets);
+	}
 
 	/* Finalize MPI */
 	MPI_Barrier( MPI_COMM_WORLD );
