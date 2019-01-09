@@ -242,7 +242,7 @@ int main(int argc, char * argv[])
 	double write_bdwth_sync = MBs / (tW + tS);
 	double read_bdwth = MBs / tR;
 	if(rank==0) {
-		fprintf(fp,"\n1D Integer-Array MPI-IO Benchmark (ranks=%d, block=%d, count=%d):\n", size, block, count);
+		fprintf(fp,"\n1D Integer-Array MPI-IO Benchmark (ranks=%d, block=%d, count=%d, sizeof(int)=%d):\n", size, block, count, sizeof(int));
 		fprintf(fp,  "WRITE(RAW):  SIZE[MB]= %f BDWTH[MB/s]= %f TIME[s]= %f\n", MBs, write_bdwth, tW);
 		fprintf(fp,  "WRITE(SYNC): SIZE[MB]= %f BDWTH[MB/s]= %f TIME[s]= %f\n", MBs, write_bdwth_sync, tW+tS);
 		fprintf(fp,  "READ(RAW):   SIZE[MB]= %f BDWTH[MB/s]= %f TIME[s]= %f\n", MBs, read_bdwth, tR);
