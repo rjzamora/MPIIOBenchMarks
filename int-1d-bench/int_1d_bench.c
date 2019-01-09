@@ -3,6 +3,7 @@
 #include <string.h>
 #include <mpi.h>
 #include <limits.h>
+//#define INT_MAX 1024
 
 #define MB            1048576
 #define SEED          12173
@@ -57,7 +58,6 @@ int main(int argc, char * argv[])
 	char * outname  = "result.txt";    // name of file to record timing numbers
 	int * lrandarr;                    // pointer to data buffer to write
 	int * lrandarr_r;                  // pointer to data buffer to read/check
-	int * offsets;                     // MPI-dataype displacements array
 	long range, i, block, nel;         // variable integers (long)
 	int count, uncache;                // variable integers (int)
 	double tC, tR, tW, tS, tUC;        // timers
@@ -71,9 +71,8 @@ int main(int argc, char * argv[])
 	MPI_File fhr, fhw;
 	MPI_Status status;
 	MPI_Offset offset0;
-	MPI_Datatype indexedtype;
 	MPI_Datatype contigtype;
-	MPI_Datatype structype;
+	MPI_Datatype vectortype;
 
 	/* Initialize MPI */
 	MPI_Init(&argc, &argv);
@@ -120,10 +119,6 @@ int main(int argc, char * argv[])
 		lrandarr_r[i] = 0;
 	}
 	offset0 = block * rank * sizeof(int); // 0th offset for this rank
-	if (count > 1) {
-		offsets = (int*) malloc(count * sizeof(int));
-	}
-
 
 	/* Start the timer */
 	MPI_Barrier( MPI_COMM_WORLD );
@@ -141,8 +136,6 @@ int main(int argc, char * argv[])
 	MPI_Barrier(MPI_COMM_WORLD);
 	tC = MPI_Wtime() - tC;
 
-
-
 	/* Open the file for writing */
 	MPI_File_open( MPI_COMM_WORLD, filename, MPI_MODE_WRONLY, info, &fhw );
 	MPI_File_set_atomicity( fhw, 0 );
@@ -154,35 +147,19 @@ int main(int argc, char * argv[])
 	/* Use MPI datatype if write is discontiguous for each rank */
 	if (count > 1) {
 
+		/* We may be writing many elements (possibly overflowing int indices).
+		 * Lets create a contiguous datatype for each block, and then create a
+		 * vector datatype on top of that.
+		 */
+		MPI_Type_contiguous( block, MPI_INT, &contigtype );
+		MPI_Type_commit( &contigtype );
+
+		MPI_Type_vector( count, 1, size, contigtype, &vectortype);
+		MPI_Type_commit( &vectortype);
+
 		/* Write the file */
-		if (nel >= INT_MAX) {
-
-			/* We are writing many int elements, and might overflow int64_t. Lets
-			 * create a contiguous datatype for each block, and then create an
-			 * indexed datatype on top of that.
-			 */
-			MPI_Type_contiguous( block, MPI_INT, &contigtype );
-			MPI_Type_commit( &contigtype );
-			for (i=0;i<count;i++) {
-				offsets[i] = i * size + rank;
-			}
-			MPI_Type_create_indexed_block(count, 1, offsets, contigtype, &indexedtype);
-			MPI_Type_commit(&indexedtype);
-			MPI_File_set_view( fhw, 0, contigtype, indexedtype, "native", info );
-			MPI_File_write_all( fhw, lrandarr, count, contigtype, &status );
-
-		} else {
-
-			/* Create an indexed datatype to capture non-contiguous pattern */
-			for (i=0;i<count;i++) {
-				offsets[i] = i * (block * size) + (rank * block);
-			}
-			MPI_Type_create_indexed_block(count, block, offsets, MPI_INT, &indexedtype);
-			MPI_Type_commit(&indexedtype);
-			MPI_File_set_view( fhw, 0, MPI_INT, indexedtype, "native", info );
-			MPI_File_write_all( fhw, lrandarr, nel, MPI_INT, &status );
-
-		}
+		MPI_File_set_view( fhw, (rank * block * sizeof(MPI_INT)), contigtype, vectortype, "native", info );
+		MPI_File_write_all( fhw, lrandarr, count, contigtype, &status );
 
 	} else {
 
@@ -213,13 +190,9 @@ int main(int argc, char * argv[])
 	/* Close the file */
 	MPI_File_close( &fhw );
 
-
-
 	/* Write a dummy file to inhibit caching effects */
 	if (uncache)
 		tUC = PFS_Uncache( funcache );
-
-
 
 	/* Open the original file for reading */
 	MPI_File_open( MPI_COMM_WORLD, filename, MPI_MODE_RDONLY, info, &fhr);
@@ -233,13 +206,8 @@ int main(int argc, char * argv[])
 	if (count > 1) {
 
 		/* Read the file */
-		if (nel >= INT_MAX) {
-			MPI_File_set_view( fhr, 0, contigtype, indexedtype, "native", info );
-			MPI_File_read_all( fhr, lrandarr_r, count, contigtype, &status );
-		} else {
-			MPI_File_set_view( fhr, 0, MPI_INT, indexedtype, "native", info );
-			MPI_File_read_all( fhr, lrandarr_r, nel, MPI_INT, &status );
-		}
+		MPI_File_set_view( fhr, (rank * block * sizeof(MPI_INT)), contigtype, vectortype, "native", info );
+		MPI_File_read_all( fhr, lrandarr_r, count, contigtype, &status );
 
 	} else {
 
@@ -259,7 +227,6 @@ int main(int argc, char * argv[])
 
 	/* Close the file */
 	MPI_File_close( &fhr );
-
 
 	/* Write BDWTH */
 	double MBs = ((double) (sizeof(int) * size * nel) / ((double) MB));
@@ -288,9 +255,6 @@ int main(int argc, char * argv[])
 	/* Free arrays */
 	free(lrandarr);
 	free(lrandarr_r);
-	if (count > 1) {
-		free(offsets);
-	}
 
 	/* Finalize MPI */
 	MPI_Barrier( MPI_COMM_WORLD );
