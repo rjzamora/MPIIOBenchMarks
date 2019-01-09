@@ -8,6 +8,7 @@
 #define RANGE         100
 #define MAX_CHAR_PATH 4096
 
+/* Borrowed from Francois Tessier */
 double PFS_Uncache (char *filename)
 {
 	int rank, i, err;
